@@ -45,6 +45,11 @@ raise alerts in Kibana Security.
 
 ## Projects
 
+| Project | What it shows | Status |
+|---|---|---|
+| [**ssh-bruteforce-detection**](ssh-bruteforce-detection/) | Threshold rule for SSH brute-force against `root`; analysis of 47,212 failed attempts from 82 IPs; triage of the one successful login (benign admin). | ✅ Complete |
+| [**rdp-bruteforce-detection**](rdp-bruteforce-detection/) | Threshold rule for RDP brute-force against `Administrator`; analysis of 4,558 failed attempts from 176 IPs; a real case-sensitivity gap found in the rule. | 🚧 Draft (data real, prose pending) |
+
 Each project folder is self-contained:
 
 ```
@@ -54,4 +59,14 @@ scripts/     a small parser that regenerates the summary from the raw data
 blog/        longer-form narrative draft
 ```
 
-_Project index added once the projects land — see below._
+## Skills demonstrated
+
+Elastic Stack · Elastic Security / SIEM · detection engineering · threshold rules ·
+KQL · Elastic Agent / Fleet · log analysis · alert triage (true/false positive) ·
+IOC extraction · Linux & Windows host telemetry.
+
+## A note on redaction
+
+Attacking source IPs are retained as indicators of compromise. The administrator's
+own source IP is redacted, and the SOC server's management URL is redacted to
+`<SOC-IP>` in the exported rules. Nothing here exposes live management infrastructure.
