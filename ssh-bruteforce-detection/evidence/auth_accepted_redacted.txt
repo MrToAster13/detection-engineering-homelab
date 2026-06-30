@@ -1,0 +1,1 @@
+Jun 30 00:00:05 Linux-Ubuntu24-ssh sshd[518620]: Accepted password for root from <REDACTED-ADMIN-IP> port 51630 ssh2
