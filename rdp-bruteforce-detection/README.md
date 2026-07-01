@@ -73,5 +73,5 @@ evidence/
 scripts/
   analyze_rdp_log.py           # regenerates the summary + IOCs from the CSV
 blog/
-  blog-post-draft.md           # longer-form narrative (stub — not yet written)
+  blog-post-draft.md           # longer-form narrative (draft — pending edit)
 ```
