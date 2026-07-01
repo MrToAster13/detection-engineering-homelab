@@ -15,6 +15,7 @@ the real export in evidence/ to reproduce the numbers in the README.
 """
 import argparse
 import csv
+import os
 import sys
 from collections import Counter
 from datetime import datetime
@@ -33,7 +34,7 @@ def analyze(path):
     ips, users, countries = Counter(), Counter(), Counter()
     ip_country = {}
     total = 0
-    first = last = None
+    timestamps = []
     with open(path, encoding="utf-8", errors="replace", newline="") as fh:
         for row in csv.DictReader(fh):
             total += 1
@@ -50,9 +51,17 @@ def analyze(path):
                 countries[country] += 1
             ts = parse_ts(row.get("@timestamp", ""))
             if ts:
-                first = ts if first is None or ts < first else first
-                last = ts if last is None or ts > last else last
-    return total, ips, users, countries, ip_country, first, last
+                timestamps.append(ts)
+    return {
+        "total": total,
+        "ips": ips,
+        "users": users,
+        "countries": countries,
+        "ip_country": ip_country,
+        "first": min(timestamps, default=None),
+        "last": max(timestamps, default=None),
+        "ts_parsed": len(timestamps),
+    }
 
 
 def write_iocs(path, ips, ip_country):
@@ -69,27 +78,37 @@ def main():
     ap.add_argument("--iocs", help="write unique attacking IPs to this CSV path")
     args = ap.parse_args()
 
-    total, ips, users, countries, ip_country, first, last = analyze(args.csv_file)
-    if not total:
+    # Guard: --iocs must not clobber the evidence file we're analyzing.
+    if args.iocs and os.path.abspath(args.iocs) == os.path.abspath(args.csv_file):
+        sys.exit(f"refusing to overwrite the input file with IOCs: {args.iocs}")
+
+    r = analyze(args.csv_file)
+    if not r["total"]:
         sys.exit("no rows parsed - is this the Kibana CSV export?")
 
+    first, last = r["first"], r["last"]
     span = f"{first:%b %d %H:%M} -> {last:%b %d %H:%M}" if first and last else "unknown"
-    print(f"Total failed attempts : {total:,}")
-    print(f"Unique source IPs     : {len(ips)}")
+    print(f"Total failed attempts : {r['total']:,}")
+    print(f"Unique source IPs     : {len(r['ips'])}")
     print(f"Attack window         : {span}")
+    if r["ts_parsed"] < r["total"]:
+        # Surface format drift instead of silently degrading the window to "unknown".
+        print(f"  note: only {r['ts_parsed']:,}/{r['total']:,} timestamps parsed - "
+              f"TS_FORMAT {TS_FORMAT!r} may not match this export")
+
     print("\nTop 10 attacking IPs:")
-    for ip, c in ips.most_common(10):
-        print(f"  {ip:<18} {c:>6,}  {ip_country.get(ip, '')}")
+    for ip, c in r["ips"].most_common(10):
+        print(f"  {ip:<18} {c:>6,}  {r['ip_country'].get(ip, '')}")
     print("\nTargeted usernames:")
-    for u, c in users.most_common(10):
+    for u, c in r["users"].most_common(10):
         print(f"  {u:<18} {c:>6,}")
     print("\nTop 10 source countries:")
-    for country, c in countries.most_common(10):
+    for country, c in r["countries"].most_common(10):
         print(f"  {country:<22} {c:>6,}")
 
     if args.iocs:
-        write_iocs(args.iocs, ips, ip_country)
-        print(f"\nWrote {len(ips)} IOCs -> {args.iocs}")
+        write_iocs(args.iocs, r["ips"], r["ip_country"])
+        print(f"\nWrote {len(r['ips'])} IOCs -> {args.iocs}")
 
 
 if __name__ == "__main__":
