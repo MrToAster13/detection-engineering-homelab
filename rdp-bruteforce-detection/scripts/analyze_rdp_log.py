@@ -16,26 +16,46 @@ the real export in evidence/ to reproduce the numbers in the README.
 import argparse
 import csv
 import os
+import re
 import sys
 from collections import Counter
 from datetime import datetime
 
-TS_FORMAT = "%b %d, %Y @ %H:%M:%S.%f"
+# Kibana Discover timestamps look like "Jun 15, 2026 @ 17:34:47.381".
+# Parse them explicitly (not via strptime's %b) so month matching is
+# locale-independent, and make the fractional-seconds part optional.
+_MONTHS = {m: i for i, m in enumerate(
+    ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"), start=1)}
+_TS_RE = re.compile(
+    r"^([A-Za-z]{3}) (\d{1,2}), (\d{4}) @ (\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?$")
 
 
 def parse_ts(value):
-    try:
-        return datetime.strptime(value.strip(), TS_FORMAT)
-    except (ValueError, AttributeError):
+    """Parse a Kibana timestamp into a datetime, or None if it doesn't match."""
+    m = _TS_RE.match((value or "").strip())
+    if not m:
         return None
+    mon, day, year, hh, mm, ss, frac = m.groups()
+    month = _MONTHS.get(mon)
+    if month is None:
+        return None
+    micro = int(frac.ljust(6, "0")[:6]) if frac else 0
+    return datetime(int(year), month, int(day), int(hh), int(mm), int(ss), micro)
+
+
+def _resolve(path):
+    """Normalized real path for same-file comparison (handles symlinks + case)."""
+    return os.path.normcase(os.path.realpath(path))
 
 
 def analyze(path):
     ips, users, countries = Counter(), Counter(), Counter()
     ip_country = {}
     total = 0
+    ts_unparsed = 0  # non-empty @timestamp values that did not match the format
     timestamps = []
-    with open(path, encoding="utf-8", errors="replace", newline="") as fh:
+    with open(path, encoding="utf-8-sig", errors="replace", newline="") as fh:
         for row in csv.DictReader(fh):
             total += 1
             ip = (row.get("source.ip") or "").strip()
@@ -49,9 +69,13 @@ def analyze(path):
                 users[user] += 1
             if country:
                 countries[country] += 1
-            ts = parse_ts(row.get("@timestamp", ""))
-            if ts:
-                timestamps.append(ts)
+            ts_raw = (row.get("@timestamp") or "").strip()
+            if ts_raw:
+                ts = parse_ts(ts_raw)
+                if ts:
+                    timestamps.append(ts)
+                else:
+                    ts_unparsed += 1
     return {
         "total": total,
         "ips": ips,
@@ -60,7 +84,7 @@ def analyze(path):
         "ip_country": ip_country,
         "first": min(timestamps, default=None),
         "last": max(timestamps, default=None),
-        "ts_parsed": len(timestamps),
+        "ts_unparsed": ts_unparsed,
     }
 
 
@@ -78,8 +102,10 @@ def main():
     ap.add_argument("--iocs", help="write unique attacking IPs to this CSV path")
     args = ap.parse_args()
 
-    # Guard: --iocs must not clobber the evidence file we're analyzing.
-    if args.iocs and os.path.abspath(args.iocs) == os.path.abspath(args.csv_file):
+    # Guard: --iocs must not clobber the evidence file we're analyzing. Compare
+    # resolved paths so a symlink or a differently-cased spelling (Windows) of
+    # the input can't slip past the check.
+    if args.iocs and _resolve(args.iocs) == _resolve(args.csv_file):
         sys.exit(f"refusing to overwrite the input file with IOCs: {args.iocs}")
 
     r = analyze(args.csv_file)
@@ -91,10 +117,11 @@ def main():
     print(f"Total failed attempts : {r['total']:,}")
     print(f"Unique source IPs     : {len(r['ips'])}")
     print(f"Attack window         : {span}")
-    if r["ts_parsed"] < r["total"]:
-        # Surface format drift instead of silently degrading the window to "unknown".
-        print(f"  note: only {r['ts_parsed']:,}/{r['total']:,} timestamps parsed - "
-              f"TS_FORMAT {TS_FORMAT!r} may not match this export")
+    if r["ts_unparsed"]:
+        # Only counts non-empty timestamps that failed to parse, so this flags
+        # genuine format drift rather than merely-blank cells.
+        print(f"  note: {r['ts_unparsed']:,} of {r['total']:,} rows had an "
+              f"unrecognized @timestamp and were skipped")
 
     print("\nTop 10 attacking IPs:")
     for ip, c in r["ips"].most_common(10):
