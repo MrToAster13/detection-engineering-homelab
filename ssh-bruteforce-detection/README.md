@@ -170,8 +170,6 @@ evidence/
   iocs.csv                     # attacking source IPs as IOCs
 scripts/
   analyze_auth_log.py          # regenerates the summary from raw logs
-blog/
-  blog-post-draft.md           # longer-form narrative (draft — pending edit)
 ```
 
 ## Reproduce the analysis

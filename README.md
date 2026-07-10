@@ -56,7 +56,6 @@ Each project folder is self-contained:
 detection/   exported Elastic rule (.ndjson) + plain-English breakdown
 evidence/    real captured logs/exports, an analysis summary, and IOC list
 scripts/     a small parser that regenerates the summary from the raw data
-blog/        longer-form narrative draft
 ```
 
 ## Skills demonstrated
