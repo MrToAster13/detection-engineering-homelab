@@ -1,0 +1,27 @@
+name: tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Python syntax
+        run: python -m py_compile $(git ls-files '*.py')
+      - name: Detection rules are valid NDJSON
+        run: |
+          python - <<'EOF'
+          import json, subprocess
+          for f in subprocess.check_output(["git", "ls-files", "*.ndjson"], text=True).split():
+              for n, line in enumerate(open(f), 1):
+                  if line.strip():
+                      json.loads(line)
+          EOF
